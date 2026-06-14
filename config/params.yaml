@@ -1,0 +1,13 @@
+odoo_bridge:
+  ros__parameters:
+    # --- Odoo 18 ---
+    odoo_url:      "https://wally.ecolight.com.uy"
+    odoo_db:       "wally"
+    odoo_user:     "info@ecolight.com.uy"
+    odoo_password: "admin_ecolight"
+
+    # --- Servidor HTTPS en el PC ROS2 ---
+    ssl_cert:      "/home/eco/Proyecto_102/ssl/cert.pem"
+    ssl_key:       "/home/eco/Proyecto_102/ssl/key.pem"
+    server_host:   "0.0.0.0"
+    server_port:   8000
