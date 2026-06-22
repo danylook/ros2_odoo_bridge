@@ -2,12 +2,15 @@
 bridge_node: nodo ROS2 Jazzy que conecta topics con Odoo 18.
 
 Topics suscritos:
-  /robot/job_completed  (std_msgs/String)  → "production_id"
-  /robot/qty_produced   (std_msgs/String)  → "production_id:qty"
-  /robot/job_error      (std_msgs/String)  → "production_id:mensaje"
+  /robot/job_completed   (std_msgs/String)  → "production_id"
+  /robot/qty_produced    (std_msgs/String)  → "production_id:qty"
+  /robot/job_error       (std_msgs/String)  → "production_id:mensaje"
+  /robot/workorder_done  (std_msgs/String)  → "workorder_id"
+  /robot/piece_placed    (std_msgs/String)  → "component_id:production_id"
+  /robot/piece_moving    (std_msgs/String)  → "component_id:production_id"
 
 Topics publicados:
-  /robot/start_job      (std_msgs/String)  → JSON con datos de la orden
+  /robot/start_job       (std_msgs/String)  → JSON con datos de la orden
 """
 
 import json
@@ -31,7 +34,7 @@ class BridgeNode(Node):
         self.declare_parameter('odoo_user',     'robot@tudominio.com')
         self.declare_parameter('odoo_password', '')
         self.declare_parameter('ssl_cert',      '/etc/ssl/ros2pc/cert.pem')
-        self.declare_parameter('ssl_key',       '/etc/ssl/ros2pc/key.pem')
+        self.declare_parameter('ssl_key',      '/etc/ssl/ros2pc/key.pem')
         self.declare_parameter('server_host',   '0.0.0.0')
         self.declare_parameter('server_port',   8000)
 
@@ -59,6 +62,12 @@ class BridgeNode(Node):
             String, '/robot/qty_produced', self._on_qty_produced, 10)
         self.create_subscription(
             String, '/robot/job_error', self._on_job_error, 10)
+        self.create_subscription(
+            String, '/robot/workorder_done', self._on_workorder_done, 10)
+        self.create_subscription(
+            String, '/robot/piece_placed', self._on_piece_placed, 10)
+        self.create_subscription(
+            String, '/robot/piece_moving', self._on_piece_moving, 10)
 
         # --- cliente cumotion (MoveGroup action) ---
         self._cumotion = CumotionClient(self)
@@ -89,7 +98,7 @@ class BridgeNode(Node):
         production_id = int(msg.data.strip())
         self.get_logger().info(f"Job completado: production_id={production_id}")
         try:
-            self.odoo.mark_production_done(production_id)
+            self.odoo.complete_production(production_id)
             self.get_logger().info(f"Odoo: mrp.production {production_id} → done")
         except OdooCallError as e:
             self.get_logger().error(f"Error marcando done en Odoo: {e}")
@@ -127,6 +136,85 @@ class BridgeNode(Node):
             f"Error reportado por robot en production {production_id}: {error_msg}")
         # Podés agregar aquí una llamada a Odoo para loguear el error,
         # por ejemplo escribiendo en un campo de notas o creando un chatter message.
+
+    def _on_workorder_done(self, msg: String):
+        """Robot completó una workorder individual.
+
+        Formato esperado: "workorder_id"
+        """
+        try:
+            workorder_id = int(msg.data.strip())
+        except ValueError:
+            self.get_logger().error(
+                f"Formato inválido en /robot/workorder_done: '{msg.data}' "
+                "(esperado 'workorder_id')")
+            return
+
+        self.get_logger().info(f"Workorder completada: wo_id={workorder_id}")
+        try:
+            self.odoo.complete_workorder(workorder_id)
+            self.get_logger().info(
+                f"Odoo: mrp.workorder {workorder_id} → done")
+        except OdooCallError as e:
+            self.get_logger().error(f"Error completando workorder en Odoo: {e}")
+
+    def _on_piece_placed(self, msg: String):
+        """Robot colocó una pieza en su posición final.
+
+        Formato esperado: "component_id:production_id"
+        """
+        try:
+            comp_id_str, prod_id_str = msg.data.strip().split(":")
+            component_id = int(comp_id_str)
+            production_id = int(prod_id_str)
+        except ValueError:
+            self.get_logger().error(
+                f"Formato inválido en /robot/piece_placed: '{msg.data}' "
+                "(esperado 'component_id:production_id')")
+            return
+
+        self.get_logger().info(
+            f"Pieza colocada: component_id={component_id} "
+            f"production_id={production_id}")
+        try:
+            self.odoo.update_piece_status(
+                component_id=component_id,
+                state="placed",
+                production_id=production_id,
+            )
+            self.get_logger().info(
+                f"Odoo: pieza {component_id} → placed")
+        except OdooCallError as e:
+            self.get_logger().error(f"Error actualizando pieza en Odoo: {e}")
+
+    def _on_piece_moving(self, msg: String):
+        """Robot está moviendo una pieza.
+
+        Formato esperado: "component_id:production_id"
+        """
+        try:
+            comp_id_str, prod_id_str = msg.data.strip().split(":")
+            component_id = int(comp_id_str)
+            production_id = int(prod_id_str)
+        except ValueError:
+            self.get_logger().error(
+                f"Formato inválido en /robot/piece_moving: '{msg.data}' "
+                "(esperado 'component_id:production_id')")
+            return
+
+        self.get_logger().info(
+            f"Pieza en movimiento: component_id={component_id} "
+            f"production_id={production_id}")
+        try:
+            self.odoo.update_piece_status(
+                component_id=component_id,
+                state="moving",
+                production_id=production_id,
+            )
+            self.get_logger().info(
+                f"Odoo: pieza {component_id} → moving")
+        except OdooCallError as e:
+            self.get_logger().error(f"Error actualizando pieza en Odoo: {e}")
 
 
 def main(args=None):
