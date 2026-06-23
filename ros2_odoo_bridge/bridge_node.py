@@ -22,6 +22,7 @@ from std_msgs.msg import String
 from .odoo_client import OdooClient, OdooAuthError, OdooCallError
 from .job_server import JobServer
 from .cumotion_client import CumotionClient
+from .master_controller import MasterController, RobotConfig, RobotRole
 
 
 class BridgeNode(Node):
@@ -37,6 +38,7 @@ class BridgeNode(Node):
         self.declare_parameter('ssl_key',      '/etc/ssl/ros2pc/key.pem')
         self.declare_parameter('server_host',   '0.0.0.0')
         self.declare_parameter('server_port',   8000)
+        self.declare_parameter('simulation',    True)  # True=simular, False=robot real
 
         p = lambda name: self.get_parameter(name).value  # noqa
 
@@ -68,6 +70,36 @@ class BridgeNode(Node):
             String, '/robot/piece_placed', self._on_piece_placed, 10)
         self.create_subscription(
             String, '/robot/piece_moving', self._on_piece_moving, 10)
+
+        # --- master controller (simulación o real) ---
+        self._simulation = p('simulation')
+        self._master = MasterController(odoo_client=self.odoo,
+                                        simulation=self._simulation)
+
+        # Registrar robot de ensamblaje
+        assembly_robot = RobotConfig(
+            name="kuka_assembly",
+            role=RobotRole.ASSEMBLY,
+            simulation_mode=self._simulation,
+            sim_place_time_min=3.0,
+            sim_place_time_max=8.0,
+        )
+        self._master.register_robot(assembly_robot)
+
+        # Registrar robot de corte
+        cutting_robot = RobotConfig(
+            name="kuka_cutting",
+            role=RobotRole.CUTTING,
+            simulation_mode=self._simulation,
+            sim_cut_time_min=2.0,
+            sim_cut_time_max=5.0,
+        )
+        self._master.register_robot(cutting_robot)
+
+        if self._simulation:
+            self.get_logger().info("Modo SIMULACIÓN activado — respuestas simuladas con tiempos aleatorios")
+        else:
+            self.get_logger().info("Modo REAL — usando CumotionClient")
 
         # --- cliente cumotion (MoveGroup action) ---
         self._cumotion = CumotionClient(self)

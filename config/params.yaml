@@ -11,3 +11,8 @@ odoo_bridge:
     ssl_key:       "/home/eco/Proyecto_102/ssl/key.pem"
     server_host:   "0.0.0.0"
     server_port:   8000
+
+    # --- Modo de operación ---
+    # simulation: true  → respuestas simuladas con tiempos aleatorios (sin robot físico)
+    # simulation: false → usa CumotionClient para robot KUKA real
+    simulation:    true
